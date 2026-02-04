@@ -2092,3 +2092,182 @@ showScreen = function (screenId) {
         renderUserList();
     }
 };
+
+// ========================================
+// エクスポート/インポート機能（デバイス間同期用）
+// ========================================
+
+// 全データをエクスポート
+function exportAllData() {
+    const exportData = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        data: {
+            users: JSON.parse(localStorage.getItem('careplan_users') || '[]'),
+            plans: JSON.parse(localStorage.getItem('careplan_plans') || '[]'),
+            requiredServices: JSON.parse(localStorage.getItem('requiredServices') || '{}'),
+            // 現在の作業中データも含める
+            currentSession: {
+                assessmentData: assessmentData,
+                carePlanItems: carePlanItems,
+                selectedServiceType: selectedServiceType,
+                currentUserId: currentUserId
+            }
+        }
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `careplan_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('データをエクスポートしました');
+}
+
+// データをインポート
+function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const importedData = JSON.parse(event.target.result);
+
+                // バージョンチェック
+                if (!importedData.version || !importedData.data) {
+                    throw new Error('無効なファイル形式です');
+                }
+
+                // 確認ダイアログ
+                const confirmMessage = `以下のデータをインポートします：
+・利用者: ${importedData.data.users?.length || 0}人
+・計画書: ${importedData.data.plans?.length || 0}件
+・必須サービス設定: ${Object.keys(importedData.data.requiredServices || {}).length}カテゴリ
+
+現在のデータに追加されます。続行しますか？`;
+
+                if (!confirm(confirmMessage)) return;
+
+                // データをマージ
+                mergeImportedData(importedData.data);
+
+                showToast('インポートが完了しました');
+
+                // 画面を更新
+                location.reload();
+
+            } catch (error) {
+                alert('インポートに失敗しました: ' + error.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    input.click();
+}
+
+// インポートデータをマージ
+function mergeImportedData(data) {
+    // 利用者をマージ（ID重複は上書き）
+    if (data.users && data.users.length > 0) {
+        const existingUsers = JSON.parse(localStorage.getItem('careplan_users') || '[]');
+        const userMap = new Map(existingUsers.map(u => [u.id, u]));
+        data.users.forEach(u => userMap.set(u.id, u));
+        localStorage.setItem('careplan_users', JSON.stringify([...userMap.values()]));
+        users = [...userMap.values()];
+    }
+
+    // 計画書をマージ（ID重複は上書き）
+    if (data.plans && data.plans.length > 0) {
+        const existingPlans = JSON.parse(localStorage.getItem('careplan_plans') || '[]');
+        const planMap = new Map(existingPlans.map(p => [p.id, p]));
+        data.plans.forEach(p => planMap.set(p.id, p));
+        localStorage.setItem('careplan_plans', JSON.stringify([...planMap.values()]));
+        savedCarePlans = [...planMap.values()];
+    }
+
+    // 必須サービス設定をマージ（上書き）
+    if (data.requiredServices && Object.keys(data.requiredServices).length > 0) {
+        const existing = JSON.parse(localStorage.getItem('requiredServices') || '{}');
+        const merged = { ...existing, ...data.requiredServices };
+        localStorage.setItem('requiredServices', JSON.stringify(merged));
+    }
+}
+
+// エクスポート/インポートモーダルを表示
+function showSyncModal() {
+    const modal = document.createElement('div');
+    modal.id = 'syncModal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    `;
+
+    modal.innerHTML = `
+        <div style="
+            background: var(--bg-color);
+            border-radius: 16px;
+            max-width: 400px;
+            width: 100%;
+            padding: 24px;
+        ">
+            <h2 style="margin-bottom: 16px; color: var(--text-color);">🔄 データ同期</h2>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+                Mac、iPhone、会社PC間でデータを同期できます。
+            </p>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button class="btn btn-primary btn-block" onclick="exportAllData(); closeSyncModal();">
+                    📤 エクスポート（データを保存）
+                </button>
+                <button class="btn btn-success btn-block" onclick="importData(); closeSyncModal();">
+                    📥 インポート（データを読み込み）
+                </button>
+                <button class="btn btn-secondary btn-block" onclick="closeSyncModal()">
+                    キャンセル
+                </button>
+            </div>
+            
+            <div style="margin-top: 16px; padding: 12px; background: var(--card-bg); border-radius: 8px;">
+                <p style="font-size: 12px; color: var(--text-secondary); margin: 0;">
+                    💡 エクスポートしたファイルをメール、AirDrop、Googleドライブ等で送信し、他の端末でインポートしてください。
+                </p>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeSyncModal();
+        }
+    });
+}
+
+function closeSyncModal() {
+    const modal = document.getElementById('syncModal');
+    if (modal) modal.remove();
+}
