@@ -1,0 +1,21 @@
+{
+    "name": "ケアプラン作成支援",
+    "short_name": "ケアプラン",
+    "description": "厚生労働省課題分析標準項目（23項目）準拠のケアプラン作成支援アプリ",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#1a1a2e",
+    "theme_color": "#10b981",
+    "icons": [
+        {
+            "src": "icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
