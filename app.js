@@ -177,7 +177,7 @@ function updateCurrentUserBanner() {
     if (currentUserId) {
         const user = users.find(u => u.id === currentUserId);
         if (user) {
-            nameElement.textContent = user.name;
+            nameElement.textContent = user.initial;
             banner.style.display = 'block';
         } else {
             banner.style.display = 'none';
@@ -1843,7 +1843,7 @@ function selectUser(userId) {
                 const data = JSON.parse(savedProgress);
                 const savedDate = new Date(data.savedAt).toLocaleString('ja-JP');
 
-                if (confirm(`${user.name}さんの途中保存データがあります\n（${savedDate}）\n\n続きから再開しますか？`)) {
+                if (confirm(`${user.initial}さんの途中保存データがあります\n（${savedDate}）\n\n続きから再開しますか？`)) {
                     assessmentData = data.assessmentData || {};
                     selectedServiceType = data.selectedServiceType;
                     currentCategoryIndex = data.currentCategoryIndex || 0;
