@@ -164,6 +164,98 @@ function startAssessment() {
     carePlanItems = []; // 計画書アイテムもリセット
     assessmentData = {}; // アセスメントデータもリセット
     showScreen('assessmentScreen');
+    updateCurrentUserBanner();
+}
+
+// 利用者バナーを更新
+function updateCurrentUserBanner() {
+    const banner = document.getElementById('currentUserBanner');
+    const nameElement = document.getElementById('currentUserName');
+
+    if (!banner || !nameElement) return;
+
+    if (currentUserId) {
+        const user = users.find(u => u.id === currentUserId);
+        if (user) {
+            nameElement.textContent = user.name;
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
+        }
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+// アセスメント途中保存
+function saveAssessmentProgress() {
+    saveCurrentCategoryData();
+
+    if (!currentUserId) {
+        alert('利用者が選択されていないため保存できません');
+        return;
+    }
+
+    // 保存するデータ
+    const progressData = {
+        assessmentData: { ...assessmentData },
+        selectedServiceType: selectedServiceType,
+        currentCategoryIndex: currentCategoryIndex,
+        savedAt: new Date().toISOString()
+    };
+
+    // 利用者IDをキーにして保存
+    const progressKey = `assessment_progress_${currentUserId}`;
+    localStorage.setItem(progressKey, JSON.stringify(progressData));
+
+    showToast('アセスメントを途中保存しました');
+}
+
+// アセスメント途中データを読み込む
+function loadAssessmentProgress(userId) {
+    const progressKey = `assessment_progress_${userId}`;
+    const savedProgress = localStorage.getItem(progressKey);
+
+    if (savedProgress) {
+        try {
+            const data = JSON.parse(savedProgress);
+            const savedDate = new Date(data.savedAt).toLocaleString('ja-JP');
+
+            if (confirm(`途中保存データがあります（${savedDate}）\n続きから再開しますか？`)) {
+                assessmentData = data.assessmentData || {};
+                selectedServiceType = data.selectedServiceType;
+                currentCategoryIndex = data.currentCategoryIndex || 0;
+                return true;
+            }
+        } catch (e) {
+            console.error('途中保存データの読み込みエラー:', e);
+        }
+    }
+    return false;
+}
+
+// 途中保存データを削除
+function clearAssessmentProgress(userId) {
+    const progressKey = `assessment_progress_${userId}`;
+    localStorage.removeItem(progressKey);
+}
+
+// アセスメント画面から離れる前の確認
+function confirmLeaveAssessment() {
+    saveCurrentCategoryData();
+
+    // データがあるか確認
+    const hasData = Object.values(assessmentData).some(data =>
+        data.checkedItems && data.checkedItems.length > 0
+    );
+
+    if (hasData && currentUserId) {
+        if (confirm('入力中のデータがあります。途中保存しますか？')) {
+            saveAssessmentProgress();
+        }
+    }
+
+    showScreen('homeScreen');
 }
 
 // ========================================
@@ -1741,6 +1833,31 @@ function selectUser(userId) {
     const user = users.find(u => u.id === userId);
 
     if (user) {
+        // 途中保存データがあるか確認
+        const progressKey = `assessment_progress_${userId}`;
+        const savedProgress = localStorage.getItem(progressKey);
+
+        if (savedProgress) {
+            // 途中保存データがある場合
+            try {
+                const data = JSON.parse(savedProgress);
+                const savedDate = new Date(data.savedAt).toLocaleString('ja-JP');
+
+                if (confirm(`${user.name}さんの途中保存データがあります\n（${savedDate}）\n\n続きから再開しますか？`)) {
+                    assessmentData = data.assessmentData || {};
+                    selectedServiceType = data.selectedServiceType;
+                    currentCategoryIndex = data.currentCategoryIndex || 0;
+                    carePlanItems = [];
+                    currentPlanId = null;
+                    showScreen('assessmentScreen');
+                    updateCurrentUserBanner();
+                    return;
+                }
+            } catch (e) {
+                console.error('途中保存データの読み込みエラー:', e);
+            }
+        }
+
         // 利用者の保存済み計画書があるか確認
         const userPlans = savedCarePlans.filter(p => p.userId === userId);
 
