@@ -1,4 +1,4 @@
-const CACHE_NAME = 'careplan-v1';
+const CACHE_NAME = 'careplan-v2';
 const urlsToCache = [
     './',
     './index.html',
@@ -8,29 +8,37 @@ const urlsToCache = [
     './manifest.json'
 ];
 
-// インストール時にキャッシュ
+// インストール時にキャッシュ（即座にアクティブ化）
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(urlsToCache))
+            .then(() => self.skipWaiting()) // 即座にアクティブ化
     );
 });
 
-// フェッチ時にキャッシュから返す（オフライン対応）
+// フェッチ時：ネットワーク優先、失敗時にキャッシュ
 self.addEventListener('fetch', event => {
     event.respondWith(
-        caches.match(event.request)
+        fetch(event.request)
             .then(response => {
-                // キャッシュがあればそれを返す、なければネットワークから取得
-                if (response) {
-                    return response;
+                // 成功したらキャッシュを更新
+                if (response.status === 200) {
+                    const responseClone = response.clone();
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, responseClone);
+                    });
                 }
-                return fetch(event.request);
+                return response;
+            })
+            .catch(() => {
+                // ネットワーク失敗時はキャッシュから返す
+                return caches.match(event.request);
             })
     );
 });
 
-// 古いキャッシュを削除
+// 古いキャッシュを削除（即座にクライアントを制御）
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(cacheNames => {
@@ -41,6 +49,6 @@ self.addEventListener('activate', event => {
                     return caches.delete(cacheName);
                 })
             );
-        })
+        }).then(() => self.clients.claim()) // 即座にクライアントを制御
     );
 });
