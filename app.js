@@ -163,6 +163,25 @@ function startAssessment() {
     currentPlanId = null; // 新規作成なのでリセット
     carePlanItems = []; // 計画書アイテムもリセット
     assessmentData = {}; // アセスメントデータもリセット
+
+    // 匿名保存データがあるか確認（利用者未選択の場合）
+    if (!currentUserId) {
+        const savedProgress = localStorage.getItem('assessment_progress_anonymous');
+        if (savedProgress) {
+            try {
+                const data = JSON.parse(savedProgress);
+                const savedDate = new Date(data.savedAt).toLocaleString('ja-JP');
+                if (confirm(`途中保存データがあります（${savedDate}）\n続きから再開しますか？`)) {
+                    assessmentData = data.assessmentData || {};
+                    selectedServiceType = data.selectedServiceType || selectedServiceType;
+                    currentCategoryIndex = data.currentCategoryIndex || 0;
+                }
+            } catch (e) {
+                console.error('途中保存データの読み込みエラー:', e);
+            }
+        }
+    }
+
     showScreen('assessmentScreen');
     updateCurrentUserBanner();
 }
@@ -191,11 +210,6 @@ function updateCurrentUserBanner() {
 function saveAssessmentProgress() {
     saveCurrentCategoryData();
 
-    if (!currentUserId) {
-        alert('利用者が選択されていないため保存できません');
-        return;
-    }
-
     // 保存するデータ
     const progressData = {
         assessmentData: { ...assessmentData },
@@ -204,9 +218,9 @@ function saveAssessmentProgress() {
         savedAt: new Date().toISOString()
     };
 
-    // 利用者IDをキーにして保存
-    const progressKey = `assessment_progress_${currentUserId}`;
-    localStorage.setItem(progressKey, JSON.stringify(progressData));
+    // 利用者IDがある場合はそのIDで、ない場合は「匿名」で保存
+    const saveKey = currentUserId ? `assessment_progress_${currentUserId}` : 'assessment_progress_anonymous';
+    localStorage.setItem(saveKey, JSON.stringify(progressData));
 
     showToast('アセスメントを途中保存しました');
 }
@@ -249,7 +263,7 @@ function confirmLeaveAssessment() {
         data.checkedItems && data.checkedItems.length > 0
     );
 
-    if (hasData && currentUserId) {
+    if (hasData) {
         if (confirm('入力中のデータがあります。途中保存しますか？')) {
             saveAssessmentProgress();
         }
@@ -2709,17 +2723,116 @@ function exportAllData() {
 
     const jsonString = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const fileName = `careplan_backup_${new Date().toISOString().slice(0, 10)}.json`;
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `careplan_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // iOS/Safari対応：ダウンロードリンクを表示するモーダルを使用
+    if (navigator.userAgent.match(/iPhone|iPad|iPod|Safari/i) && !navigator.userAgent.match(/Chrome/i)) {
+        // iOSやSafariの場合は新しいタブで開く方式
+        const url = URL.createObjectURL(blob);
+        showExportModal(url, fileName, jsonString);
+    } else {
+        // 通常のブラウザはダウンロード
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('データをエクスポートしました（ダウンロードフォルダを確認してください）');
+    }
+}
 
-    showToast('データをエクスポートしました');
+// エクスポートモーダル（iOS/Safari対応）
+function showExportModal(url, fileName, jsonContent) {
+    const modal = document.createElement('div');
+    modal.id = 'exportModal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 3000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    `;
+
+    modal.innerHTML = `
+        <div style="
+            background: var(--bg-color);
+            border-radius: 16px;
+            max-width: 400px;
+            width: 100%;
+            padding: 24px;
+            text-align: center;
+        ">
+            <h3 style="margin-bottom: 16px; color: var(--text-color);">📤 データのエクスポート</h3>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+                ファイル名: <strong>${fileName}</strong>
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <a href="${url}" download="${fileName}" 
+                   style="
+                       background: var(--primary-color);
+                       color: white;
+                       padding: 14px;
+                       border-radius: 8px;
+                       text-decoration: none;
+                       font-weight: 600;
+                   ">💾 ダウンロード</a>
+                <button onclick="copyToClipboard('${encodeURIComponent(jsonContent)}'); closeExportModal();" 
+                        style="
+                            background: var(--success-color, #059669);
+                            color: white;
+                            border: none;
+                            padding: 14px;
+                            border-radius: 8px;
+                            font-size: 16px;
+                            cursor: pointer;
+                        ">📋 クリップボードにコピー</button>
+                <button onclick="closeExportModal()" 
+                        style="
+                            background: var(--card-bg);
+                            color: var(--text-color);
+                            border: 1px solid var(--border-color);
+                            padding: 12px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                        ">閉じる</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-top: 16px;">
+                💡 ダウンロードできない場合は、「クリップボードにコピー」してメモアプリに貼り付けてください
+            </p>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+function closeExportModal() {
+    const modal = document.getElementById('exportModal');
+    if (modal) modal.remove();
+}
+
+function copyToClipboard(encodedContent) {
+    const content = decodeURIComponent(encodedContent);
+    navigator.clipboard.writeText(content).then(() => {
+        showToast('クリップボードにコピーしました');
+    }).catch(() => {
+        // フォールバック
+        const textarea = document.createElement('textarea');
+        textarea.value = content;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast('クリップボードにコピーしました');
+    });
 }
 
 // データをインポート
