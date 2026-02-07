@@ -494,26 +494,38 @@ async function callGeminiAPI(prompt) {
     // 利用可能なモデル（2026年現在）
     const modelName = 'gemini-2.0-flash';
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 2048
-            }
-        })
-    });
+    console.log('Gemini API呼び出し開始');
+    console.log('APIキー:', apiKey ? apiKey.substring(0, 10) + '...' : 'なし');
 
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData?.error?.message || `HTTPエラー ${response.status}`;
-        throw new Error(translateApiError(errorMessage));
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 2048
+                }
+            })
+        });
+
+        console.log('APIレスポンスステータス:', response.status);
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('APIエラー詳細:', errorData);
+            const errorMessage = errorData?.error?.message || `HTTPエラー ${response.status}`;
+            throw new Error(translateApiError(errorMessage));
+        }
+
+        const result = await response.json();
+        console.log('API成功');
+        return result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (error) {
+        console.error('Gemini API呼び出しエラー:', error);
+        throw error;
     }
-
-    const result = await response.json();
-    return result.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 // APIエラーを日本語に変換
