@@ -424,7 +424,7 @@ async function generateFromCategory() {
 
         showScreen('carePlanScreen');
     } catch (error) {
-        alert('生成に失敗しました: ' + error.message);
+        showErrorModal(error.message);
     } finally {
         showLoading(false);
     }
@@ -460,7 +460,7 @@ async function generateFromAllCategories() {
 
         showScreen('carePlanScreen');
     } catch (error) {
-        alert('統合生成に失敗しました: ' + error.message);
+        showErrorModal(error.message);
     } finally {
         showLoading(false);
     }
@@ -1321,10 +1321,10 @@ function showSuggestionModal(categoryName, suggestions) {
                 <input type="checkbox" id="suggestionCheck-${index}" checked style="width: 20px; height: 20px;" onclick="event.stopPropagation(); toggleSuggestionSelect(${index})">
                 <strong style="color: var(--primary-color);">${suggestion.itemName}</strong>
             </div>
-            <div style="font-size: 14px; line-height: 1.6;">
+            <div style="font-size: 15px; line-height: 1.8;">
                 <!-- ニーズ（ハイブリッドUI） -->
-                <div style="margin-bottom: 12px; padding: 12px; background: var(--bg-color); border-radius: 8px;">
-                    <div style="color: var(--text-secondary); margin-bottom: 8px; font-weight: 600;">📝 ニーズ：</div>
+                <div style="margin-bottom: 16px; padding: 16px; background: #1e1e2e; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="color: #a0a0ff; margin-bottom: 10px; font-weight: 700; font-size: 16px;">📝 ニーズ：</div>
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px;">
                         <select id="stateSelect-${index}" onchange="updateNeedsPreview(${index})" style="
                             padding: 8px;
@@ -1354,28 +1354,30 @@ function showSuggestionModal(categoryName, suggestions) {
                         font-size: 14px;
                     " oninput="updateNeedsPreview(${index})">
                     <div id="needsPreview-${index}" style="
-                        margin-top: 8px;
-                        padding: 8px;
-                        background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%);
-                        border-radius: 6px;
-                        font-size: 13px;
-                        color: var(--text-color);
+                        margin-top: 12px;
+                        padding: 12px;
+                        background: linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.2) 100%);
+                        border-radius: 8px;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: #ffffff;
+                        border: 1px solid rgba(99,102,241,0.3);
                     ">
                         → ${suggestion.state}だが、${suggestion.wish}
                     </div>
                 </div>
                 
-                <div style="margin-bottom: 8px;">
-                    <span style="color: var(--text-secondary);">長期目標：</span>
-                    <span>${suggestion.longTermGoal}</span>
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #80d0ff; font-weight: 600;">長期目標：</span>
+                    <span style="color: #ffffff;">${suggestion.longTermGoal}</span>
                 </div>
-                <div style="margin-bottom: 8px;">
-                    <span style="color: var(--text-secondary);">短期目標：</span>
-                    <span>${suggestion.shortTermGoal}</span>
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #80ffa0; font-weight: 600;">短期目標：</span>
+                    <span style="color: #ffffff;">${suggestion.shortTermGoal}</span>
                 </div>
-                <div>
-                    <span style="color: var(--text-secondary);">サービス：</span>
-                    <span>${suggestion.serviceContent}</span>
+                <div style="padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #ffcc80; font-weight: 600;">サービス：</span>
+                    <span style="color: #ffffff;">${suggestion.serviceContent}</span>
                 </div>
             </div>
         </div>
@@ -2241,6 +2243,68 @@ function showToast(message) {
         toast.style.transition = 'opacity 0.3s ease';
         setTimeout(() => toast.remove(), 300);
     }, 2000);
+}
+
+// エラーモーダル（OKを押すまで消えない）
+function showErrorModal(message) {
+    const modal = document.createElement('div');
+    modal.id = 'errorModal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 3000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    `;
+
+    modal.innerHTML = `
+        <div style="
+            background: var(--bg-color);
+            border-radius: 16px;
+            max-width: 400px;
+            width: 100%;
+            padding: 24px;
+            text-align: center;
+        ">
+            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+            <div style="
+                color: var(--text-color);
+                font-size: 15px;
+                line-height: 1.8;
+                white-space: pre-wrap;
+                text-align: left;
+                margin-bottom: 24px;
+                max-height: 60vh;
+                overflow-y: auto;
+            ">${message}</div>
+            <button onclick="closeErrorModal()" style="
+                background: var(--primary-color);
+                color: white;
+                border: none;
+                padding: 14px 32px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                width: 100%;
+            ">OK</button>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+function closeErrorModal() {
+    const modal = document.getElementById('errorModal');
+    if (modal) {
+        modal.remove();
+    }
 }
 
 function deleteUser(userId) {
