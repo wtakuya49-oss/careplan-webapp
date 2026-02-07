@@ -1231,7 +1231,7 @@ function showSuggestions() {
     // 現在のカテゴリのチェック項目を取得
     saveCurrentCategoryData();
     const category = ASSESSMENT_CATEGORIES[currentCategoryIndex];
-    const data = assessmentData[category.id] || { checkedItems: [] };
+    const data = assessmentData[category.id] || { checkedItems: [], detailText: '' };
 
     if (data.checkedItems.length === 0) {
         alert('項目をチェックしてから「提案を表示」をクリックしてください');
@@ -1242,9 +1242,21 @@ function showSuggestions() {
     const suggestions = [];
     data.checkedItems.forEach(item => {
         if (ITEM_TEMPLATES && ITEM_TEMPLATES[item]) {
+            const template = ITEM_TEMPLATES[item];
+
+            // 具体的内容がある場合はサービス内容に追加
+            let serviceContent = template.serviceContent;
+            if (data.detailText && data.detailText.trim()) {
+                serviceContent = `${serviceContent}【詳細】${data.detailText.trim()}`;
+            }
+
             suggestions.push({
                 itemName: item,
-                ...ITEM_TEMPLATES[item]
+                needs: template.needs,
+                longTermGoal: template.longTermGoal,
+                shortTermGoal: template.shortTermGoal,
+                serviceContent: serviceContent,
+                detailText: data.detailText || ''
             });
         }
     });
@@ -1694,43 +1706,283 @@ function closeIntegratedGenerationModal() {
 }
 
 function generateIntegratedWithTemplate() {
-    let addedCount = 0;
-
-    // 統合生成は上書きモード：既存の計画項目をクリア
-    carePlanItems = [];
-
-    // 保存された必須サービス内容を読み込む
+    // 選択されたカテゴリを収集
+    const selectedCategories = [];
     const savedRequiredServices = JSON.parse(localStorage.getItem('requiredServices') || '{}');
 
-    // 7つのカテゴリすべてを順番に処理
     Object.entries(INTEGRATED_CATEGORIES).forEach(([key, intCategory]) => {
-        // チェックボックスの選択状態を確認
         const checkbox = document.getElementById(`intCat-${key}`);
         if (!checkbox || !checkbox.checked) return;
 
-        // 統合テンプレートを使用（該当項目の有無に関わらず7カテゴリすべて）
         if (intCategory.integratedTemplate) {
             const template = intCategory.integratedTemplate;
 
-            // サービス内容に必須項目を追加
+            // 必須サービス内容を追加
             let serviceContent = template.serviceContent;
             const requiredService = savedRequiredServices[key];
             if (requiredService) {
                 serviceContent = `${serviceContent}、${requiredService}`;
             }
 
-            carePlanItems.push({
+            selectedCategories.push({
+                key: key,
                 categoryName: `${intCategory.icon} ${intCategory.name}`,
                 needs: template.needs,
                 longTermGoal: template.longTermGoal,
                 shortTermGoal: template.shortTermGoal,
                 serviceContent: serviceContent
             });
+        }
+    });
+
+    if (selectedCategories.length === 0) {
+        alert('カテゴリを選択してください');
+        return;
+    }
+
+    closeIntegratedGenerationModal();
+
+    // ハイブリッドUI対応のモーダルを表示
+    showIntegratedSuggestionModal(selectedCategories);
+}
+
+// 統合生成用のハイブリッドUI対応モーダル
+function showIntegratedSuggestionModal(categories) {
+    const modal = document.createElement('div');
+    modal.id = 'integratedSuggestionModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        overflow-y: auto;
+    `;
+
+    // ニーズを「状態」と「希望」に分離
+    const processedCategories = categories.map((cat, index) => {
+        const needs = cat.needs || '';
+        let state = '';
+        let wish = '';
+
+        if (needs.includes('だが、')) {
+            const parts = needs.split('だが、');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else if (needs.includes('だが')) {
+            const parts = needs.split('だが');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else {
+            state = needs;
+            wish = '';
+        }
+
+        const stateSuggestions = generateStateSuggestions(cat.categoryName.replace(/^[^\s]+\s/, ''), state);
+
+        return {
+            ...cat,
+            index,
+            state,
+            wish,
+            stateSuggestions,
+            selectedState: state
+        };
+    });
+
+    const categoriesHtml = processedCategories.map((cat, index) => `
+        <div class="suggestion-card" style="
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 2px solid var(--primary-color);
+        " id="intSuggestion-${index}">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <input type="checkbox" id="intSuggestionCheck-${index}" checked style="width: 20px; height: 20px;">
+                <strong style="color: var(--primary-color); font-size: 16px;">${cat.categoryName}</strong>
+            </div>
+            <div style="font-size: 15px; line-height: 1.8;">
+                <!-- ニーズ（ハイブリッドUI） -->
+                <div style="margin-bottom: 16px; padding: 16px; background: #1e1e2e; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="color: #a0a0ff; margin-bottom: 10px; font-weight: 700; font-size: 16px;">📝 ニーズ：</div>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px;">
+                        <select id="intStateSelect-${index}" onchange="updateIntNeedsPreview(${index})" style="
+                            padding: 8px;
+                            border-radius: 6px;
+                            border: 1px solid var(--border-color);
+                            background: var(--card-bg);
+                            color: var(--text-color);
+                            font-size: 14px;
+                            flex: 1;
+                            min-width: 150px;
+                        ">
+                            ${cat.stateSuggestions.map((s, i) => `<option value="${s}" ${i === 0 ? 'selected' : ''}>${s}</option>`).join('')}
+                            <option value="__custom__">✏️ 自由入力...</option>
+                        </select>
+                        <span style="color: var(--text-secondary);">だが、</span>
+                        <span style="color: var(--text-color);">${cat.wish}</span>
+                    </div>
+                    <input type="text" id="intCustomState-${index}" placeholder="状態を入力（例：〇〇が困難）" style="
+                        display: none;
+                        width: 100%;
+                        margin-top: 8px;
+                        padding: 8px;
+                        border-radius: 6px;
+                        border: 1px solid var(--border-color);
+                        background: var(--card-bg);
+                        color: var(--text-color);
+                        font-size: 14px;
+                    " oninput="updateIntNeedsPreview(${index})">
+                    <div id="intNeedsPreview-${index}" style="
+                        margin-top: 12px;
+                        padding: 12px;
+                        background: linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.2) 100%);
+                        border-radius: 8px;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: #ffffff;
+                        border: 1px solid rgba(99,102,241,0.3);
+                    ">
+                        → ${cat.state}だが、${cat.wish}
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #80d0ff; font-weight: 600;">長期目標：</span>
+                    <span style="color: #ffffff;">${cat.longTermGoal}</span>
+                </div>
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #80ffa0; font-weight: 600;">短期目標：</span>
+                    <span style="color: #ffffff;">${cat.shortTermGoal}</span>
+                </div>
+                <div style="padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <span style="color: #ffcc80; font-weight: 600;">サービス：</span>
+                    <span style="color: #ffffff;">${cat.serviceContent}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    modal.innerHTML = `
+        <div style="
+            background: var(--bg-color);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 24px;
+        ">
+            <h2 style="margin-bottom: 8px; color: var(--text-color);">✨ 統合生成 - 提案内容</h2>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+                ${processedCategories.length}カテゴリのケアプランを生成します。<br>
+                <strong style="color: var(--primary-color);">💡 ニーズの「状態」部分を選択・編集できます</strong>
+            </p>
+            
+            <div id="intSuggestionList">
+                ${categoriesHtml}
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; margin-top: 16px; gap: 12px;">
+                <button class="btn btn-secondary" onclick="closeIntegratedSuggestionModal()" style="flex: 1; padding: 12px;">
+                    キャンセル
+                </button>
+                <button class="btn btn-primary" onclick="addIntegratedSuggestions()" style="flex: 2; padding: 12px;">
+                    ✅ 選択した項目を追加
+                </button>
+            </div>
+        </div>
+    `;
+
+    // グローバルに保存
+    window.integratedSuggestions = processedCategories;
+
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeIntegratedSuggestionModal();
+        }
+    });
+}
+
+// 統合生成用のプレビュー更新
+function updateIntNeedsPreview(index) {
+    const select = document.getElementById(`intStateSelect-${index}`);
+    const customInput = document.getElementById(`intCustomState-${index}`);
+    const preview = document.getElementById(`intNeedsPreview-${index}`);
+
+    if (!select || !preview) return;
+
+    const cat = window.integratedSuggestions[index];
+    let state = '';
+
+    if (select.value === '__custom__') {
+        customInput.style.display = 'block';
+        state = customInput.value || '（状態を入力）';
+    } else {
+        customInput.style.display = 'none';
+        state = select.value;
+    }
+
+    preview.textContent = `→ ${state}だが、${cat.wish}`;
+    window.integratedSuggestions[index].selectedState = state;
+}
+
+// 統合生成モーダルを閉じる
+function closeIntegratedSuggestionModal() {
+    const modal = document.getElementById('integratedSuggestionModal');
+    if (modal) modal.remove();
+    window.integratedSuggestions = null;
+}
+
+// 統合生成の提案を追加
+function addIntegratedSuggestions() {
+    const categories = window.integratedSuggestions || [];
+
+    // 統合生成は上書きモード：既存の計画項目をクリア
+    carePlanItems = [];
+    let addedCount = 0;
+
+    categories.forEach((cat, index) => {
+        const checkbox = document.getElementById(`intSuggestionCheck-${index}`);
+        if (checkbox && checkbox.checked) {
+            // ユーザーが選択・編集した状態を取得
+            const select = document.getElementById(`intStateSelect-${index}`);
+            const customInput = document.getElementById(`intCustomState-${index}`);
+
+            let state = cat.state;
+
+            if (select) {
+                if (select.value === '__custom__' && customInput) {
+                    state = customInput.value || cat.state;
+                } else if (select.value !== '__custom__') {
+                    state = select.value;
+                }
+            }
+
+            const needs = `${state}だが、${cat.wish}`;
+
+            carePlanItems.push({
+                categoryName: cat.categoryName,
+                needs: needs,
+                longTermGoal: cat.longTermGoal,
+                shortTermGoal: cat.shortTermGoal,
+                serviceContent: cat.serviceContent
+            });
             addedCount++;
         }
     });
 
-    closeIntegratedGenerationModal();
+    closeIntegratedSuggestionModal();
 
     if (addedCount > 0) {
         showToast(`${addedCount}カテゴリを追加しました`);
