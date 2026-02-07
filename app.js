@@ -163,8 +163,10 @@ function startAssessment() {
     currentPlanId = null; // 新規作成なのでリセット
     carePlanItems = []; // 計画書アイテムもリセット
     assessmentData = {}; // アセスメントデータもリセット
+    currentCategoryIndex = 0; // カテゴリインデックスもリセット
 
     // 匿名保存データがあるか確認（利用者未選択の場合）
+    let loadedFromProgress = false;
     if (!currentUserId) {
         const savedProgress = localStorage.getItem('assessment_progress_anonymous');
         if (savedProgress) {
@@ -175,6 +177,7 @@ function startAssessment() {
                     assessmentData = data.assessmentData || {};
                     selectedServiceType = data.selectedServiceType || selectedServiceType;
                     currentCategoryIndex = data.currentCategoryIndex || 0;
+                    loadedFromProgress = true;
                 }
             } catch (e) {
                 console.error('途中保存データの読み込みエラー:', e);
@@ -184,6 +187,12 @@ function startAssessment() {
 
     showScreen('assessmentScreen');
     updateCurrentUserBanner();
+
+    // 途中保存から読み込んだ場合は、カテゴリUIを再レンダリング
+    if (loadedFromProgress) {
+        renderCategoryTabs();
+        renderCategoryContent();
+    }
 }
 
 // 利用者バナーを更新
@@ -699,8 +708,8 @@ function renderCarePlan() {
         return;
     }
 
-    // APIキーまたはローカルAIがある場合のみ編集ボタンを表示
-    const canEdit = apiKey || useLocalAI;
+    // APIキーがなくても編集可能（手動編集はいつでもOK）
+    const canEdit = true;
 
     // セルごとの編集ボタンを生成するヘルパー関数
     const editableCell = (index, field, content) => {
@@ -806,50 +815,141 @@ function showFieldEditModal(index, field) {
         padding: 16px;
     `;
 
-    modal.innerHTML = `
-        <div style="
-            background: var(--bg-color);
-            border-radius: 16px;
-            max-width: 500px;
-            width: 100%;
-            padding: 24px;
-            max-height: 90vh;
-            overflow-y: auto;
-        ">
-            <h2 style="margin-bottom: 16px; color: var(--text-color);">✏️ ${fieldLabel}を編集</h2>
-            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
-                「${item.categoryName}」の${fieldLabel}を編集します
-            </p>
-            
-            <div class="form-group">
-                <textarea id="fieldEditText" class="form-textarea" style="min-height: 100px; width: 100%;">${currentValue}</textarea>
-            </div>
-            
-            <div style="margin-bottom: 16px;">
-                <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 8px;">🤖 AIで書き換え：</p>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button class="btn btn-secondary" style="flex: 1; min-width: 100px;" onclick="applyFieldStyle(${index}, '${field}', 'concise')">
-                        ✂️ 簡潔に
+    // ニーズ編集の場合はハイブリッドUIを表示
+    if (field === 'needs') {
+        // ニーズを「状態」と「希望」に分離
+        let state = '';
+        let wish = '';
+        if (currentValue.includes('だが、')) {
+            const parts = currentValue.split('だが、');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else if (currentValue.includes('だが')) {
+            const parts = currentValue.split('だが');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else {
+            state = currentValue;
+            wish = '';
+        }
+
+        // カテゴリ名から状態の選択肢を生成
+        const categoryName = (item.categoryName || '').replace(/^[^\s]+\s/, '');
+        const stateSuggestions = generateStateSuggestions(categoryName, state);
+
+        modal.innerHTML = `
+            <div style="
+                background: var(--bg-color);
+                border-radius: 16px;
+                max-width: 500px;
+                width: 100%;
+                padding: 24px;
+                max-height: 90vh;
+                overflow-y: auto;
+            ">
+                <h2 style="margin-bottom: 16px; color: var(--text-color);">✏️ ${fieldLabel}を編集</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+                    「${item.categoryName}」の${fieldLabel}を編集します
+                </p>
+                
+                <!-- ハイブリッドUI：状態の選択 -->
+                <div style="margin-bottom: 16px; padding: 16px; background: #1e1e2e; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="color: #a0a0ff; margin-bottom: 10px; font-weight: 700; font-size: 15px;">📝 状態を選択：</div>
+                    <select id="needsStateSelect" onchange="updateNeedsEditPreview()" style="
+                        width: 100%;
+                        padding: 10px;
+                        border-radius: 8px;
+                        border: 1px solid var(--border-color);
+                        background: var(--card-bg);
+                        color: var(--text-color);
+                        font-size: 15px;
+                        margin-bottom: 8px;
+                    ">
+                        ${stateSuggestions.map((s, i) => `<option value="${s}" ${i === 0 ? 'selected' : ''}>${s}</option>`).join('')}
+                        <option value="__custom__">✏️ 自由入力...</option>
+                    </select>
+                    <input type="text" id="needsCustomState" placeholder="状態を入力" value="${state}" style="
+                        display: none;
+                        width: 100%;
+                        padding: 10px;
+                        border-radius: 8px;
+                        border: 1px solid var(--border-color);
+                        background: var(--card-bg);
+                        color: var(--text-color);
+                        font-size: 15px;
+                    " oninput="updateNeedsEditPreview()">
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="color: var(--text-secondary); font-size: 14px;">希望部分（「だが、○○」の○○）：</label>
+                    <input type="text" id="needsWish" value="${wish}" style="
+                        width: 100%;
+                        padding: 10px;
+                        border-radius: 8px;
+                        border: 1px solid var(--border-color);
+                        background: var(--card-bg);
+                        color: var(--text-color);
+                        font-size: 15px;
+                        margin-top: 6px;
+                    " oninput="updateNeedsEditPreview()">
+                </div>
+                
+                <!-- プレビュー -->
+                <div id="needsEditPreview" style="
+                    margin-bottom: 16px;
+                    padding: 14px;
+                    background: linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.2) 100%);
+                    border-radius: 10px;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: #ffffff;
+                    border: 1px solid rgba(99,102,241,0.3);
+                ">
+                    → ${state}${wish ? `だが、${wish}` : ''}
+                </div>
+                
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn btn-secondary" style="flex: 1;" onclick="closeFieldEditModal()">
+                        キャンセル
                     </button>
-                    <button class="btn btn-secondary" style="flex: 1; min-width: 100px;" onclick="applyFieldStyle(${index}, '${field}', 'polite')">
-                        📝 丁寧に
-                    </button>
-                    <button class="btn btn-secondary" style="flex: 1; min-width: 100px;" onclick="applyFieldStyle(${index}, '${field}', 'specific')">
-                        🔍 具体的に
+                    <button class="btn btn-primary" style="flex: 1;" onclick="saveNeedsEdit(${index})">
+                        保存
                     </button>
                 </div>
             </div>
-            
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-secondary" style="flex: 1;" onclick="closeFieldEditModal()">
-                    キャンセル
-                </button>
-                <button class="btn btn-primary" style="flex: 1;" onclick="saveFieldEdit(${index}, '${field}')">
-                    保存
-                </button>
+        `;
+    } else {
+        // 通常のテキストエリア編集
+        modal.innerHTML = `
+            <div style="
+                background: var(--bg-color);
+                border-radius: 16px;
+                max-width: 500px;
+                width: 100%;
+                padding: 24px;
+                max-height: 90vh;
+                overflow-y: auto;
+            ">
+                <h2 style="margin-bottom: 16px; color: var(--text-color);">✏️ ${fieldLabel}を編集</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+                    「${item.categoryName}」の${fieldLabel}を編集します
+                </p>
+                
+                <div class="form-group">
+                    <textarea id="fieldEditText" class="form-textarea" style="min-height: 120px; width: 100%; font-size: 15px;">${currentValue}</textarea>
+                </div>
+                
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn btn-secondary" style="flex: 1;" onclick="closeFieldEditModal()">
+                        キャンセル
+                    </button>
+                    <button class="btn btn-primary" style="flex: 1;" onclick="saveFieldEdit(${index}, '${field}')">
+                        保存
+                    </button>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+    }
 
     document.body.appendChild(modal);
 
@@ -858,6 +958,67 @@ function showFieldEditModal(index, field) {
             closeFieldEditModal();
         }
     });
+
+    // ニーズ編集の場合、選択イベントを設定
+    if (field === 'needs') {
+        const select = document.getElementById('needsStateSelect');
+        const customInput = document.getElementById('needsCustomState');
+        if (select && customInput) {
+            select.addEventListener('change', () => {
+                if (select.value === '__custom__') {
+                    customInput.style.display = 'block';
+                    customInput.focus();
+                } else {
+                    customInput.style.display = 'none';
+                }
+                updateNeedsEditPreview();
+            });
+        }
+    }
+}
+
+// ニーズ編集プレビュー更新
+function updateNeedsEditPreview() {
+    const select = document.getElementById('needsStateSelect');
+    const customInput = document.getElementById('needsCustomState');
+    const wishInput = document.getElementById('needsWish');
+    const preview = document.getElementById('needsEditPreview');
+
+    if (!select || !preview) return;
+
+    let state = select.value === '__custom__' ? (customInput?.value || '') : select.value;
+    let wish = wishInput?.value || '';
+
+    let fullNeeds = state;
+    if (wish.trim()) {
+        fullNeeds = `${state}だが、${wish}`;
+    }
+
+    preview.textContent = `→ ${fullNeeds}`;
+}
+
+// ニーズ保存
+function saveNeedsEdit(index) {
+    const select = document.getElementById('needsStateSelect');
+    const customInput = document.getElementById('needsCustomState');
+    const wishInput = document.getElementById('needsWish');
+
+    if (!select) return;
+
+    let state = select.value === '__custom__' ? (customInput?.value || '') : select.value;
+    let wish = wishInput?.value || '';
+
+    let fullNeeds = state;
+    if (wish.trim()) {
+        fullNeeds = `${state}だが、${wish}`;
+    }
+
+    if (fullNeeds.trim()) {
+        carePlanItems[index].needs = fullNeeds;
+        renderCarePlan();
+        showToast('ニーズを更新しました');
+    }
+    closeFieldEditModal();
 }
 
 function closeFieldEditModal() {
