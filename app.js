@@ -1277,25 +1277,94 @@ function showSuggestionModal(categoryName, suggestions) {
         overflow-y: auto;
     `;
 
-    const suggestionsHtml = suggestions.map((suggestion, index) => `
+    // ニーズ文言を「状態」と「希望」に分離する
+    const processedSuggestions = suggestions.map((suggestion, index) => {
+        // 「〜〜だが、〇〇したい」形式を分離
+        const needs = suggestion.needs || '';
+        let state = '';
+        let wish = '';
+
+        if (needs.includes('だが、')) {
+            const parts = needs.split('だが、');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else if (needs.includes('だが')) {
+            const parts = needs.split('だが');
+            state = parts[0];
+            wish = parts[1] || '';
+        } else {
+            state = needs;
+            wish = '';
+        }
+
+        // 状態の候補を生成（チェック項目名 + バリエーション）
+        const itemName = suggestion.itemName || '';
+        const stateSuggestions = generateStateSuggestions(itemName, state);
+
+        return {
+            ...suggestion,
+            state,
+            wish,
+            stateSuggestions
+        };
+    });
+
+    const suggestionsHtml = processedSuggestions.map((suggestion, index) => `
         <div class="suggestion-card" style="
             background: var(--card-bg);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
-            border: 2px solid transparent;
-            cursor: pointer;
-            transition: all 0.2s;
-        " onclick="toggleSuggestionSelect(${index})" id="suggestion-${index}">
+            border: 2px solid var(--primary-color);
+        " id="suggestion-${index}">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                <input type="checkbox" id="suggestionCheck-${index}" checked style="width: 20px; height: 20px;">
+                <input type="checkbox" id="suggestionCheck-${index}" checked style="width: 20px; height: 20px;" onclick="event.stopPropagation(); toggleSuggestionSelect(${index})">
                 <strong style="color: var(--primary-color);">${suggestion.itemName}</strong>
             </div>
             <div style="font-size: 14px; line-height: 1.6;">
-                <div style="margin-bottom: 8px;">
-                    <span style="color: var(--text-secondary);">ニーズ：</span>
-                    <span>${suggestion.needs}</span>
+                <!-- ニーズ（ハイブリッドUI） -->
+                <div style="margin-bottom: 12px; padding: 12px; background: var(--bg-color); border-radius: 8px;">
+                    <div style="color: var(--text-secondary); margin-bottom: 8px; font-weight: 600;">📝 ニーズ：</div>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px;">
+                        <select id="stateSelect-${index}" onchange="updateNeedsPreview(${index})" style="
+                            padding: 8px;
+                            border-radius: 6px;
+                            border: 1px solid var(--border-color);
+                            background: var(--card-bg);
+                            color: var(--text-color);
+                            font-size: 14px;
+                            flex: 1;
+                            min-width: 150px;
+                        ">
+                            ${suggestion.stateSuggestions.map((s, i) => `<option value="${s}" ${i === 0 ? 'selected' : ''}>${s}</option>`).join('')}
+                            <option value="__custom__">✏️ 自由入力...</option>
+                        </select>
+                        <span style="color: var(--text-secondary);">だが、</span>
+                        <span style="color: var(--text-color);">${suggestion.wish}</span>
+                    </div>
+                    <input type="text" id="customState-${index}" placeholder="状態を入力（例：〇〇が困難）" style="
+                        display: none;
+                        width: 100%;
+                        margin-top: 8px;
+                        padding: 8px;
+                        border-radius: 6px;
+                        border: 1px solid var(--border-color);
+                        background: var(--card-bg);
+                        color: var(--text-color);
+                        font-size: 14px;
+                    " oninput="updateNeedsPreview(${index})">
+                    <div id="needsPreview-${index}" style="
+                        margin-top: 8px;
+                        padding: 8px;
+                        background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%);
+                        border-radius: 6px;
+                        font-size: 13px;
+                        color: var(--text-color);
+                    ">
+                        → ${suggestion.state}だが、${suggestion.wish}
+                    </div>
                 </div>
+                
                 <div style="margin-bottom: 8px;">
                     <span style="color: var(--text-secondary);">長期目標：</span>
                     <span>${suggestion.longTermGoal}</span>
@@ -1325,7 +1394,7 @@ function showSuggestionModal(categoryName, suggestions) {
             <h2 style="margin-bottom: 8px; color: var(--text-color);">✨ 提案内容</h2>
             <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
                 ${categoryName}のチェック項目から自動生成しました。<br>
-                追加する項目を選択してください。
+                <strong style="color: var(--primary-color);">💡 ニーズの「状態」部分を選択・編集できます</strong>
             </p>
             
             <div id="suggestionList">
@@ -1342,13 +1411,13 @@ function showSuggestionModal(categoryName, suggestions) {
             </div>
             
             <p style="color: var(--text-secondary); font-size: 12px; text-align: center; margin-top: 16px;">
-                💡 追加後に第2表で編集できます
+                💡 追加後に第2表でさらに編集できます
             </p>
         </div>
     `;
 
-    // グローバルに提案データを保存
-    window.currentSuggestions = suggestions;
+    // グローバルに提案データを保存（状態と希望を分離済み）
+    window.currentSuggestions = processedSuggestions;
 
     document.body.appendChild(modal);
 
@@ -1358,6 +1427,66 @@ function showSuggestionModal(categoryName, suggestions) {
             closeSuggestionModal();
         }
     });
+}
+
+// 状態の候補を生成する関数
+function generateStateSuggestions(itemName, defaultState) {
+    // 基本候補
+    const suggestions = [defaultState];
+
+    // チェック項目名に基づく追加候補
+    const additionalSuggestions = {
+        '歩行が不安定': ['ふらつきがある', 'すり足になっている', '歩行時にバランスを崩しやすい'],
+        '転倒リスクがある': ['足元がふらつく', '転倒の恐れがある', '足腰が弱っている'],
+        '物忘れがある': ['短期記憶が低下している', '最近のことを忘れやすい', '何度も同じことを聞く'],
+        '見当識障害がある': ['日時や場所がわからなくなる', '時間の感覚が曖昧である', '自分の居場所がわからない'],
+        '尿失禁がある': ['尿意を感じにくい', 'トイレが間に合わないことがある', '排尿のコントロールが難しい'],
+        '便秘傾向がある': ['排便が不規則である', '便が硬くなりやすい', '排便に苦労することがある'],
+        '食欲不振がある': ['食事への意欲が低下している', '食べる量が減っている', '食事を残すことが多い'],
+        '嚥下困難がある': ['飲み込みにくさがある', 'むせやすい', '食事に時間がかかる'],
+        '口腔内の清潔保持が困難': ['自分で歯磨きが難しい', '口腔ケアに介助が必要', '口腔内が乾燥しやすい'],
+        '褥瘡リスクが高い': ['皮膚が弱い', '同じ姿勢が続きやすい', '体圧分散が必要'],
+        '外出機会が少ない': ['家にこもりがち', '外に出る機会がない', '外出への意欲が低い'],
+        '閉じこもりがち': ['人との交流が少ない', '家から出たがらない', '活動量が減っている'],
+        '聴力の低下がある': ['耳が遠くなっている', '会話が聞き取りにくい', '大きな声でないと聞こえない'],
+        '視力の低下がある': ['目が見えにくい', '細かいものが見えにくい', '視野が狭くなっている']
+    };
+
+    // 追加候補があれば追加
+    if (additionalSuggestions[itemName]) {
+        suggestions.push(...additionalSuggestions[itemName]);
+    }
+
+    // 重複を除去
+    return [...new Set(suggestions)];
+}
+
+// ニーズのプレビューを更新する関数
+function updateNeedsPreview(index) {
+    const select = document.getElementById(`stateSelect-${index}`);
+    const customInput = document.getElementById(`customState-${index}`);
+    const preview = document.getElementById(`needsPreview-${index}`);
+
+    if (!select || !preview) return;
+
+    const suggestion = window.currentSuggestions[index];
+    let state = '';
+
+    if (select.value === '__custom__') {
+        // 自由入力モード
+        customInput.style.display = 'block';
+        state = customInput.value || '（状態を入力）';
+    } else {
+        // 選択モード
+        customInput.style.display = 'none';
+        state = select.value;
+    }
+
+    // プレビュー更新
+    preview.textContent = `→ ${state}だが、${suggestion.wish}`;
+
+    // 選択した状態を保存
+    window.currentSuggestions[index].selectedState = state;
 }
 
 function toggleSuggestionSelect(index) {
@@ -1386,9 +1515,26 @@ function addSelectedSuggestions() {
     suggestions.forEach((suggestion, index) => {
         const checkbox = document.getElementById(`suggestionCheck-${index}`);
         if (checkbox && checkbox.checked) {
+            // ユーザーが選択・編集した状態を取得
+            const select = document.getElementById(`stateSelect-${index}`);
+            const customInput = document.getElementById(`customState-${index}`);
+
+            let state = suggestion.state; // デフォルト
+
+            if (select) {
+                if (select.value === '__custom__' && customInput) {
+                    state = customInput.value || suggestion.state;
+                } else if (select.value !== '__custom__') {
+                    state = select.value;
+                }
+            }
+
+            // 状態と希望を組み合わせてニーズを作成
+            const needs = `${state}だが、${suggestion.wish}`;
+
             carePlanItems.push({
                 categoryName: suggestion.itemName,
-                needs: suggestion.needs,
+                needs: needs,
                 longTermGoal: suggestion.longTermGoal,
                 shortTermGoal: suggestion.shortTermGoal,
                 serviceContent: suggestion.serviceContent
