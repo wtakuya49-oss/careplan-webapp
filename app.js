@@ -515,7 +515,7 @@ async function callAI(prompt) {
 
 async function callGeminiAPI(prompt) {
     // 利用可能なモデル（2026年現在）
-    const modelName = 'gemini-2.0-flash';
+    const modelName = 'gemini-1.5-flash';
 
     console.log('Gemini API呼び出し開始');
     console.log('APIキー:', apiKey ? apiKey.substring(0, 10) + '...' : 'なし');
