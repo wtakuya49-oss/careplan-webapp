@@ -543,13 +543,15 @@ async function callGeminiAPI(prompt) {
         }
 
         const data = await response.json();
-        console.log('API成功 (レスポンス構造):', data);
+        console.log("APIレスポンス:", JSON.stringify(data));
 
-        // 安全にテキストを取得
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const responseText = JSON.stringify(data);
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+        const text = jsonMatch ? jsonMatch[0] : "";
 
         if (!text) {
-            console.error('APIレスポンスからテキストを抽出できませんでした。完全なデータ:', JSON.stringify(data, null, 2));
+            console.error('APIレスポンスからテキストを抽出できませんでした。完全なデータ:', responseText);
         }
 
         return text;

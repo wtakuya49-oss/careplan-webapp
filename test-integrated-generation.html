@@ -481,11 +481,14 @@ ADL: ${basic.adlLevel}
                 }
 
                 const result = await response.json();
-                console.log('API成功 (レスポンス内容):', result);
+                console.log("APIレスポンス:", JSON.stringify(result));
 
-                const fullResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                const responseText = JSON.stringify(result);
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+                const fullResponse = jsonMatch ? jsonMatch[0] : "";
                 if (!fullResponse) {
-                    console.error('APIレスポンスからテキストを抽出できませんでした。データ構造:', JSON.stringify(result, null, 2));
+                    console.error('APIレスポンスからテキストを抽出できませんでした。データ構造:', responseText);
                 }
 
                 const endTime = performance.now();
