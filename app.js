@@ -542,9 +542,17 @@ async function callGeminiAPI(prompt) {
             throw new Error(translateApiError(errorMessage));
         }
 
-        const result = await response.json();
-        console.log('API成功');
-        return result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const data = await response.json();
+        console.log('API成功 (レスポンス構造):', data);
+
+        // 安全にテキストを取得
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        if (!text) {
+            console.error('APIレスポンスからテキストを抽出できませんでした。完全なデータ:', JSON.stringify(data, null, 2));
+        }
+
+        return text;
     } catch (error) {
         console.error('Gemini API呼び出しエラー:', error);
         throw error;

@@ -481,7 +481,12 @@ ADL: ${basic.adlLevel}
                 }
 
                 const result = await response.json();
+                console.log('API成功 (レスポンス内容):', result);
+
                 const fullResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (!fullResponse) {
+                    console.error('APIレスポンスからテキストを抽出できませんでした。データ構造:', JSON.stringify(result, null, 2));
+                }
 
                 const endTime = performance.now();
                 genTimeEl.textContent = Math.round(endTime - startTime);
