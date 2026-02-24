@@ -534,7 +534,8 @@ async function callGeminiAPI(prompt) {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                     temperature: 0.7,
-                    maxOutputTokens: 2048
+                    maxOutputTokens: 8192,
+                    responseMimeType: "application/json"
                 }
             })
         });
@@ -2263,19 +2264,47 @@ function buildIntegratedApiPrompt(categories) {
 
 ${categoryDescriptions}
 
-各カテゴリについて、以下の形式で出力してください：
+各カテゴリについて、以下のJSON配列の形式のみで出力してください（マークダウンや余計なテキストは不要です）：
 
-【カテゴリ名】
-ニーズ: （本人の希望を含めた課題）
-長期目標: （6ヶ月〜1年の目標）
-短期目標: （3ヶ月程度の目標）
-サービス内容: （具体的な援助内容）
+[
+  {
+    "categoryName": "（アイコン付きのカテゴリ名。例：【🏥 医療・健康】）",
+    "needs": "（本人の希望を含めた課題）",
+    "longTermGoal": "（6ヶ月〜1年の目標）",
+    "shortTermGoal": "（3ヶ月程度の目標）",
+    "serviceContent": "（具体的な援助内容）"
+  },
+  ...
+]
 
 すべてのカテゴリについて出力してください。`;
 }
 
 function parseIntegratedApiResponse(text, categories) {
     const items = [];
+
+    // JSONとして直接パースできるか試みる（API側でJSON出力に固定したため）
+    if (typeof text === 'string') {
+        try {
+            const parsedArray = JSON.parse(text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim());
+            if (Array.isArray(parsedArray)) {
+                return parsedArray.map(item => ({
+                    categoryName: item.categoryName || '未分類',
+                    needs: item.needs || '',
+                    longTermGoal: item.longTermGoal || '',
+                    shortTermGoal: item.shortTermGoal || '',
+                    serviceContent: item.serviceContent || '個別対応'
+                }));
+            }
+        } catch (e) {
+            console.warn('JSON直接解析失敗、正規表現による解析を試みます:', e);
+        }
+    }
+
+    if (typeof text !== 'string') {
+        console.error('parseIntegratedApiResponse: textが文字列ではありません', text);
+        return items;
+    }
 
     categories.forEach(category => {
         // カテゴリ名でセクションを探す
