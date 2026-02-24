@@ -1156,6 +1156,7 @@ async function applyEditStyle(index, style) {
 }
 
 function parseEditedResponse(text) {
+    console.log('parseEditedResponse に渡された値:', typeof text, text);
     if (typeof text === 'object' && text !== null) {
         return {
             needs: text.needs || null,
