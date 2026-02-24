@@ -492,7 +492,7 @@ async function generateFromAllCategories() {
 // ========================================
 // AI呼び出し
 // ========================================
-async function callAI(prompt) {
+async function callAI(prompt, parseJson = true) {
     console.log('プロンプト:', prompt);
 
     let responseText;
@@ -510,6 +510,12 @@ async function callAI(prompt) {
     }
 
     console.log('AIレスポンス:', responseText);
+
+    // JSON解析が不要な場合はテキストをそのまま返す
+    if (!parseJson) {
+        return responseText;
+    }
+
     return parseAIResponse(responseText);
 }
 
@@ -543,15 +549,13 @@ async function callGeminiAPI(prompt) {
         }
 
         const data = await response.json();
-        console.log("APIレスポンス:", JSON.stringify(data));
+        console.log("APIレスポンス全体:", JSON.stringify(data));
 
-        const responseText = JSON.stringify(data);
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-        const text = jsonMatch ? jsonMatch[0] : "";
+        // テキストを安全に抽出
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
         if (!text) {
-            console.error('APIレスポンスからテキストを抽出できませんでした。完全なデータ:', responseText);
+            console.error('APIレスポンスからテキストを抽出できませんでした。完全なデータ:', JSON.stringify(data));
         }
 
         return text;
@@ -1078,7 +1082,7 @@ ${currentValue}
     showLoading(true);
 
     try {
-        const response = await callAI(prompt);
+        const response = await callAI(prompt, false);
         // レスポンスから余計な部分を除去
         const cleanedResponse = response.replace(/```.*?```/gs, '').trim();
 
@@ -1131,7 +1135,7 @@ async function applyEditStyle(index, style) {
 サービス内容: （編集後）`;
 
     try {
-        const response = await callAI(prompt);
+        const response = await callAI(prompt, false);
         const editedItem = parseEditedResponse(response);
 
         if (editedItem) {
@@ -2231,7 +2235,7 @@ async function generateIntegratedWithApi() {
     try {
         // プロンプトを構築
         const prompt = buildIntegratedApiPrompt(selectedCategories);
-        const response = await callAI(prompt);
+        const response = await callAI(prompt, false);
         const items = parseIntegratedApiResponse(response, selectedCategories);
 
         if (items.length > 0) {
