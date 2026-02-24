@@ -1156,11 +1156,30 @@ async function applyEditStyle(index, style) {
 }
 
 function parseEditedResponse(text) {
+    try {
+        // JSON形式で返ってきた場合の処理
+        const cleanedText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.needs || parsed.longTermGoal) {
+                return {
+                    needs: parsed.needs || null,
+                    longTermGoal: parsed.longTermGoal || null,
+                    shortTermGoal: parsed.shortTermGoal || null,
+                    serviceContent: parsed.serviceContent || null
+                };
+            }
+        }
+    } catch (e) {
+        console.error('JSON解析失敗、テキスト解析を試みます:', e);
+    }
+    // テキスト形式へのフォールバック
+    if (typeof text !== 'string') return null;
     const needsMatch = text.match(/ニーズ[:：]\s*(.+)/);
     const longTermMatch = text.match(/長期目標[:：]\s*(.+)/);
     const shortTermMatch = text.match(/短期目標[:：]\s*(.+)/);
     const serviceMatch = text.match(/サービス内容[:：]\s*(.+)/);
-
     if (needsMatch && longTermMatch && shortTermMatch) {
         return {
             needs: needsMatch[1].trim(),
