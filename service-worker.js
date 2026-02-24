@@ -1,4 +1,4 @@
-const CACHE_NAME = 'careplan-v16';
+const CACHE_NAME = 'careplan-v17';
 const urlsToCache = [
     './',
     './index.html',
